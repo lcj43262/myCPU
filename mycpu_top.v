@@ -24,6 +24,9 @@ module mycpu_top(
 
     reg reset;
     always @(posedge clk) reset <= ~resetn;
+    wire flush;
+    wire [31:0] flush_target;
+    wire ms_cancel;
 
     // IF stage
     wire [`BR_BUS_WD-1:0] br_bus;
@@ -34,6 +37,8 @@ module mycpu_top(
     IF_stage u_if_stage(
         .clk(clk),
         .reset(reset),
+        .flush(flush),
+        .flush_target(flush_target),
         .ds_allowin(ds_allowin),
         .br_bus(br_bus),
         .inst_sram_rdata (inst_sram_rdata ),
@@ -57,6 +62,7 @@ module mycpu_top(
     ID_stage u_id_stage(
         .clk(clk),
         .reset(reset),
+        .flush(flush),
         .es_allowin(es_allowin),
         .fs_to_ds_valid (fs_to_ds_valid),
         .fs_to_ds_bus(fs_to_ds_bus),
@@ -78,6 +84,8 @@ module mycpu_top(
     EXE_stage u_exe_stage(
         .clk(clk),
         .reset(reset),
+        .flush(flush),
+        .ms_cancel(ms_cancel),
         .ms_allowin(ms_allowin),
         .ds_to_es_valid(ds_to_es_valid),
         .ds_to_es_bus(ds_to_es_bus),
@@ -100,6 +108,8 @@ module mycpu_top(
     MEM_stage u_mem_stage(
         .clk(clk),
         .reset(reset),
+        .flush(flush),
+        .ms_cancel(ms_cancel),
         .ws_allowin(ws_allowin),
         .es_to_ms_valid(es_to_ms_valid),
         .es_to_ms_bus  (es_to_ms_bus),
@@ -113,6 +123,8 @@ module mycpu_top(
     WB_stage u_wb_stage(
         .clk(clk),
         .reset(reset),
+        .flush(flush),
+        .flush_target(flush_target),
         .ws_allowin(ws_allowin),
         .ms_to_ws_valid(ms_to_ws_valid),
         .ms_to_ws_bus(ms_to_ws_bus),

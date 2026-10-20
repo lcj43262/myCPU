@@ -3,6 +3,8 @@
 module WB_stage(
     input wire clk,
     input wire reset,
+    output wire flush,
+    output wire [31:0] flush_target,
 
     output wire ws_allowin,
 
@@ -24,7 +26,7 @@ module WB_stage(
     assign ws_allowin  = !ws_valid || ws_ready_go;
 
     always @(posedge clk) begin
-        if (reset) begin
+        if (reset || flush) begin
             ws_valid <= 1'b0;
         end
         else if (ws_allowin) begin
@@ -41,19 +43,42 @@ module WB_stage(
     wire [31:0] ws_result;
     wire [31:0] ws_pc;
     wire        ws_rf_we;
+    wire [`CSR_BUS_WD-1:0] ws_csr_bus;
+    wire ws_syscall, ws_ertn, ws_csr_read, ws_csr_write;
+    wire [13:0] ws_csr_num;
+    wire [31:0] ws_csr_wmask, ws_csr_wvalue;
+    wire [31:0] csr_rvalue, ex_entry, ex_return;
+    wire wb_ex = ws_valid && ws_syscall && !reset;
+    wire ertn_flush = ws_valid && ws_ertn && !reset;
+    wire [31:0] ws_final_result = ws_csr_read ? csr_rvalue : ws_result;
+
+    assign {ws_syscall, ws_ertn, ws_csr_read, ws_csr_write,
+            ws_csr_num, ws_csr_wmask, ws_csr_wvalue} = ws_csr_bus;
+    assign flush = wb_ex || ertn_flush;
+    assign flush_target = wb_ex ? ex_entry : ex_return;
+
+    csr u_csr(
+        .clk(clk), .reset(reset), .csr_num(ws_csr_num),
+        .csr_rvalue(csr_rvalue),
+        .csr_we(ws_valid && ws_csr_write && !flush && !reset),
+        .csr_wmask(ws_csr_wmask), .csr_wvalue(ws_csr_wvalue),
+        .wb_ex(wb_ex), .wb_pc(ws_pc), .ertn_flush(ertn_flush),
+        .ex_entry(ex_entry), .ex_return(ex_return)
+    );
 
     assign {
+        ws_csr_bus,
         ws_gr_we,
         ws_dest,
         ws_result,
         ws_pc
     } = ms_to_ws_bus_r;
 
-    assign ws_rf_we = ws_valid && ws_gr_we;
-    assign ws_to_rf_bus = {ws_rf_we, ws_dest, ws_result};
+    assign ws_rf_we = ws_valid && ws_gr_we && !flush && !reset;
+    assign ws_to_rf_bus = {ws_rf_we, ws_dest, ws_final_result};
 
     assign debug_wb_pc      = ws_pc;
     assign debug_wb_rf_we   = {4{ws_rf_we}};
     assign debug_wb_rf_wnum = ws_dest;
-    assign debug_wb_rf_wdata = ws_result;
+    assign debug_wb_rf_wdata = ws_final_result;
 endmodule

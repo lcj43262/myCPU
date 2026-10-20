@@ -3,6 +3,8 @@
 module IF_stage(
     input wire clk,
     input wire reset,
+    input wire flush,
+    input wire [31:0] flush_target,
     input wire ds_allowin,
     input wire [`BR_BUS_WD -1 :0] br_bus,
     input wire [31:0] inst_sram_rdata,
@@ -26,10 +28,10 @@ module IF_stage(
     
     assign fs_ready_go = 1'b1; //可 以 传 输
     assign fs_allowin = !fs_valid || fs_ready_go && ds_allowin; //允 许 进 入
-    assign fs_to_ds_valid = fs_valid && fs_ready_go && !br_taken;
+    assign fs_to_ds_valid = fs_valid && fs_ready_go && !br_taken && !flush;
 
     always@(posedge clk)begin
-        if(reset)begin
+        if(reset || flush)begin
             fs_valid <= 1'b0;
         end else if(fs_allowin)begin
             fs_valid <= to_fs_valid;
@@ -49,6 +51,9 @@ module IF_stage(
         if(reset)begin
             fs_pc <= 32'h1bfffffc;
         end
+        else if(flush)begin
+            fs_pc <= flush_target - 32'd4;
+        end
         else if(to_fs_valid && fs_allowin)begin
         fs_pc <= next_pc;
         end
@@ -58,7 +63,7 @@ module IF_stage(
     assign fs_inst = inst_sram_rdata;
     assign fs_to_ds_bus = {fs_inst,fs_pc};
 
-    assign inst_sram_en = to_fs_valid && fs_allowin; //
+    assign inst_sram_en = to_fs_valid && fs_allowin && !flush; //
     assign inst_sram_we = 4'h0; //写
     assign inst_sram_addr =next_pc;
     assign inst_sram_wdata = 32'b0;
