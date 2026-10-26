@@ -67,6 +67,7 @@ module EXE_stage(
     wire        es_res_from_mem;
     wire [`CSR_BUS_WD-1:0] es_csr_bus;
     wire [`EX_BUS_WD-1:0] es_ex_bus;
+    wire [`CNT_OP_WD-1:0] es_cnt_op;
     wire es_ale = ((es_load_op && es_ld_type == 3'b000) || es_mem_we == 2'b01)
                   ? (|alu_result[1:0])
                   : ((es_load_op && (es_ld_type == 3'b011 || es_ld_type == 3'b100)) ||
@@ -77,6 +78,7 @@ module EXE_stage(
     assign es_ready_go = es_exception || !is_div || div_done;
 
     assign {
+        es_cnt_op,
         es_ex_bus,
         es_csr_bus,
         es_muldiv_op,
@@ -149,6 +151,7 @@ module EXE_stage(
 
     // 1+3+1+5+32+32 = 74
     assign es_to_ms_bus = {
+        es_cnt_op,
         es_ex_bus[36:33], es_ex_bus[32] || es_ale,
         es_ale ? alu_result : es_ex_bus[31:0],
         es_csr_bus,
@@ -162,7 +165,7 @@ module EXE_stage(
 
     assign es_to_ds_bus = {
         es_valid && es_gr_we && !es_exception,
-        es_load_op || es_csr_read || !es_ready_go,
+        es_load_op || es_csr_read || (es_cnt_op != `CNT_NONE) || !es_ready_go,
         es_dest,
         es_result
     };

@@ -48,6 +48,7 @@ module WB_stage(
     wire        ws_rf_we;
     wire [`CSR_BUS_WD-1:0] ws_csr_bus;
     wire [`EX_BUS_WD-1:0] ws_ex_bus;
+    wire [`CNT_OP_WD-1:0] ws_cnt_op;
     wire ws_syscall, ws_ertn, ws_csr_read, ws_csr_write;
     wire [13:0] ws_csr_num;
     wire [31:0] ws_csr_wmask, ws_csr_wvalue;
@@ -61,7 +62,14 @@ module WB_stage(
                          ws_syscall ? `ECODE_SYS :
                          ws_ex_bus[34] ? `ECODE_BRK : `ECODE_ALE;
     assign ws_csr_pending = ws_valid && (ws_csr_write || ws_ertn);
-    wire [31:0] ws_final_result = ws_csr_read ? csr_rvalue : ws_result;
+    wire [63:0] stable_counter_value;
+    wire [31:0] tid_value;
+    wire [31:0] ws_counter_result = (ws_cnt_op == `CNT_LOW) ? stable_counter_value[31:0] :
+                                    (ws_cnt_op == `CNT_HIGH) ? stable_counter_value[63:32] :
+                                    tid_value;
+    // Sample the counter at retirement; dependents wait for this WB value.
+    wire [31:0] ws_final_result = (ws_cnt_op != `CNT_NONE) ? ws_counter_result :
+                                  ws_csr_read ? csr_rvalue : ws_result;
 
     assign {ws_syscall, ws_ertn, ws_csr_read, ws_csr_write,
             ws_csr_num, ws_csr_wmask, ws_csr_wvalue} = ws_csr_bus;
@@ -76,10 +84,12 @@ module WB_stage(
         .wb_ex(wb_ex), .wb_pc(ws_pc), .ertn_flush(ertn_flush),
         .wb_ecode(wb_ecode), .wb_badv(ws_ex_bus[31:0]),
         .hw_int_in(hw_int_in), .has_int(has_int),
+        .stable_counter_value(stable_counter_value), .tid_value(tid_value),
         .ex_entry(ex_entry), .ex_return(ex_return)
     );
 
     assign {
+        ws_cnt_op,
         ws_ex_bus,
         ws_csr_bus,
         ws_gr_we,

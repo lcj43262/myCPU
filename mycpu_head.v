@@ -4,14 +4,20 @@
 `define BR_BUS_WD       33
 `define FS_TO_DS_BUS_WD 65
 `define CSR_BUS_WD      82
+// Counter reads are completed in WB, independently of the CSR control bus.
+`define CNT_OP_WD       2
+`define CNT_NONE        2'b00
+`define CNT_LOW         2'b01
+`define CNT_HIGH        2'b10
+`define CNT_ID          2'b11
 // {ADEF, INT, BRK, INE, ALE, badv[31:0]}
 `define EX_BUS_WD       37
-`define DS_TO_ES_BUS_WD (163 + `CSR_BUS_WD + `EX_BUS_WD)
-`define ES_TO_MS_BUS_WD (74 + `CSR_BUS_WD + `EX_BUS_WD)
+`define DS_TO_ES_BUS_WD (163 + `CSR_BUS_WD + `EX_BUS_WD + `CNT_OP_WD)
+`define ES_TO_MS_BUS_WD (74 + `CSR_BUS_WD + `EX_BUS_WD + `CNT_OP_WD)
 `define ES_TO_DS_BUS_WD 39
 `define MS_TO_DS_BUS_WD 39
 `define WS_TO_RF_BUS_WD 38
-`define MS_TO_WS_BUS_WD (70 + `CSR_BUS_WD + `EX_BUS_WD)
+`define MS_TO_WS_BUS_WD (70 + `CSR_BUS_WD + `EX_BUS_WD + `CNT_OP_WD)
 //LoongArch Documentation P103,104
 `define CSR_CRMD       14'h0000
 `define CSR_PRMD       14'h0001

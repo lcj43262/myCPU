@@ -62,6 +62,15 @@ module ID_stage(
     wire inst_syscall = (ds_inst[31:15] == 17'h00056);
     wire inst_break = (ds_inst[31:15] == 17'h00054);
     wire inst_ertn = (ds_inst == 32'h06483800);
+    // RDCNTID uses rj as its destination, not as a source register.
+    // 0x00006000 is also RDCNTVL.W r0; decode that harmless alias as LOW.
+    wire inst_rdcntvl_w = (ds_inst[31:5] == 27'h0000300);
+    wire inst_rdcntvh_w = (ds_inst[31:5] == 27'h0000320);
+    wire inst_rdcntid = (ds_inst[31:10] == 22'h000018) &&
+                       (ds_inst[4:0] == 5'd0) && (ds_inst[9:5] != 5'd0);
+    wire [`CNT_OP_WD-1:0] cnt_op = inst_rdcntvl_w ? `CNT_LOW :
+                                      inst_rdcntvh_w ? `CNT_HIGH :
+                                      inst_rdcntid ? `CNT_ID : `CNT_NONE;
     wire [`CSR_BUS_WD-1:0] csr_bus;
     wire [`EX_BUS_WD-1:0] ds_ex_bus;
     wire inst_valid;
@@ -268,7 +277,8 @@ module ID_stage(
                         inst_lu12i_w | inst_slti | inst_sltui | inst_andi |
                         inst_ori | inst_xori | inst_sll_w | inst_srl_w |
                         inst_sra_w | inst_pcaddu12i | inst_muldiv |
-                        inst_csr | inst_syscall | inst_break | inst_ertn;
+                        inst_csr | inst_syscall | inst_break | inst_ertn |
+                        inst_rdcntvl_w | inst_rdcntvh_w | inst_rdcntid;
     assign ds_ex_bus = {ds_adef, has_int, inst_break, !inst_valid, 1'b0, ds_pc};
 
     /////////////////////////////////
@@ -366,7 +376,7 @@ module ID_stage(
     assign mem_we = inst_st_w ? 2'b01 :
                     inst_st_b ? 2'b10 :
                     inst_st_h ? 2'b11 : 2'b00;
-    assign dest = dst_is_r1 ? 5'd1 : rd;
+    assign dest = inst_rdcntid ? rj : dst_is_r1 ? 5'd1 : rd;
 
     assign rf_raddr1 = rj;
 
@@ -409,7 +419,7 @@ module ID_stage(
                      ? rf_wdata
                      : rf_rdata2;
 
-    // CSR values are available only in WB; division also blocks until done.
+    // CSR/counter values are available only in WB; division waits until done.
     assign load_hazard = (es_rf_we && es_load_op && (es_rf_waddr != 5'd0) &&
                          ((rj_re  && (rj != 5'd0)       && (rj == es_rf_waddr)) ||
                           (rkd_re && (rf_raddr2 != 5'd0) && (rf_raddr2 == es_rf_waddr)))) ||
@@ -453,6 +463,7 @@ module ID_stage(
     };
 
     assign ds_to_es_bus = {
+        cnt_op,
         ds_ex_bus,
         csr_bus,
         muldiv_op ,     //7
