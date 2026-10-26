@@ -5,6 +5,7 @@ module MEM_stage(
     input wire reset,
     input wire flush,
     output wire ms_cancel,
+    output wire ms_csr_pending,
 
     input wire ws_allowin,
     output wire ms_allowin,
@@ -46,9 +47,13 @@ module MEM_stage(
     wire [31:0] ms_alu_result;
     wire [31:0] ms_pc;
     wire [`CSR_BUS_WD-1:0] ms_csr_bus;
-    assign ms_cancel = ms_valid && (ms_csr_bus[81] || ms_csr_bus[80]);
+    wire [`EX_BUS_WD-1:0] ms_ex_bus;
+    wire ms_exception = (|ms_ex_bus[36:32]) || ms_csr_bus[81];
+    assign ms_cancel = ms_valid && (ms_exception || ms_csr_bus[80]);
+    assign ms_csr_pending = ms_valid && (ms_csr_bus[78] || ms_csr_bus[80]);
 
     assign {
+        ms_ex_bus,
         ms_csr_bus,
         ms_res_from_mem,
         ms_ld_type,
@@ -81,6 +86,7 @@ module MEM_stage(
     assign ms_result = ms_res_from_mem ? ms_load_result : ms_alu_result;
     //1+5+32+32
     assign ms_to_ws_bus = {
+        ms_ex_bus,
         ms_csr_bus,
         ms_gr_we,
         ms_dest,
@@ -89,7 +95,7 @@ module MEM_stage(
     };
 
     assign ms_to_ds_bus = {
-        ms_valid && ms_gr_we,
+        ms_valid && ms_gr_we && !ms_exception,
         ms_csr_bus[79],
         ms_dest,
         ms_result

@@ -4,6 +4,8 @@ module ID_stage(
     input wire clk,
     input wire reset,
     input wire flush,
+    input wire has_int,
+    input wire csr_pending,
     //allowin
     input wire es_allowin,
     //from if stage
@@ -34,7 +36,7 @@ module ID_stage(
     wire ms_result_pending;
     reg [`FS_TO_DS_BUS_WD-1 : 0] fs_to_ds_bus_r;
 
-    assign ds_ready_go = !load_hazard;
+    assign ds_ready_go = !load_hazard && !csr_pending;
     assign ds_allowin = !ds_valid || ds_ready_go && es_allowin;
     assign ds_to_es_valid = ds_valid && ds_ready_go && !flush;
 
@@ -50,15 +52,20 @@ module ID_stage(
         end
     end
 
-    assign {ds_inst, ds_pc} = fs_to_ds_bus_r;
+    wire ds_adef;
+    assign {ds_adef, ds_inst, ds_pc} = fs_to_ds_bus_r;
 
     wire inst_csrrd = (ds_inst[31:24] == 8'h04) && (ds_inst[9:5] == 5'd0);
     wire inst_csrwr = (ds_inst[31:24] == 8'h04) && (ds_inst[9:5] == 5'd1);
     wire inst_csrxchg = (ds_inst[31:24] == 8'h04) && (ds_inst[9:5] > 5'd1);
     wire inst_csr = inst_csrrd || inst_csrwr || inst_csrxchg;
     wire inst_syscall = (ds_inst[31:15] == 17'h00056);
+    wire inst_break = (ds_inst[31:15] == 17'h00054);
     wire inst_ertn = (ds_inst == 32'h06483800);
     wire [`CSR_BUS_WD-1:0] csr_bus;
+    wire [`EX_BUS_WD-1:0] ds_ex_bus;
+    wire inst_valid;
+    wire ds_exception = ds_adef || has_int || inst_syscall || inst_break || !inst_valid;
 
     wire [11:0] alu_op;
     wire [6:0] muldiv_op;
@@ -251,6 +258,19 @@ module ID_stage(
                        inst_mulh_wu, inst_mulh_w, inst_mul_w};
     assign inst_muldiv = |muldiv_op;
 
+    assign inst_valid = inst_add_w | inst_sub_w | inst_slt | inst_sltu |
+                        inst_nor | inst_and | inst_or | inst_xor |
+                        inst_slli_w | inst_srli_w | inst_srai_w | inst_addi_w |
+                        inst_ld_w | inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu |
+                        inst_st_w | inst_st_b | inst_st_h |
+                        inst_jirl | inst_b | inst_bl | inst_beq | inst_bne |
+                        inst_blt | inst_bge | inst_bltu | inst_bgeu |
+                        inst_lu12i_w | inst_slti | inst_sltui | inst_andi |
+                        inst_ori | inst_xori | inst_sll_w | inst_srl_w |
+                        inst_sra_w | inst_pcaddu12i | inst_muldiv |
+                        inst_csr | inst_syscall | inst_break | inst_ertn;
+    assign ds_ex_bus = {ds_adef, has_int, inst_break, !inst_valid, 1'b0, ds_pc};
+
     /////////////////////////////////
     assign alu_op[ 0] = inst_add_w | inst_addi_w | inst_ld_w | inst_st_w |
                         inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu |
@@ -342,7 +362,7 @@ module ID_stage(
                      inst_ld_hu ? 3'b100 : 3'b000;
     assign dst_is_r1 = inst_bl;
     assign gr_we = ~inst_st_w & ~inst_st_b & ~inst_st_h & ~inst_beq & ~inst_bne & ~inst_blt & ~inst_bge &
-                    ~inst_bltu & ~inst_bgeu & ~inst_b & ~inst_syscall & ~inst_ertn;
+                    ~inst_bltu & ~inst_bgeu & ~inst_b & ~inst_ertn & ~ds_exception;
     assign mem_we = inst_st_w ? 2'b01 :
                     inst_st_b ? 2'b10 :
                     inst_st_h ? 2'b11 : 2'b00;
@@ -420,7 +440,7 @@ module ID_stage(
                     || inst_jirl
                     || inst_bl
                     || inst_b
-                    ) && ds_valid && ds_ready_go && es_allowin && !flush;
+                    ) && ds_valid && ds_ready_go && es_allowin && !flush && !ds_exception;
     assign br_target = (inst_beq || inst_bne || inst_blt || inst_bge ||
                         inst_bltu || inst_bgeu || inst_bl || inst_b) ? (ds_pc + br_offs)
                                                                     : (rj_value + jirl_offs);
@@ -433,6 +453,7 @@ module ID_stage(
     };
 
     assign ds_to_es_bus = {
+        ds_ex_bus,
         csr_bus,
         muldiv_op ,     //7
         alu_op ,        //12

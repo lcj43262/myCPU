@@ -3,6 +3,9 @@
 module WB_stage(
     input wire clk,
     input wire reset,
+    input wire [7:0] hw_int_in,
+    output wire has_int,
+    output wire ws_csr_pending,
     output wire flush,
     output wire [31:0] flush_target,
 
@@ -44,12 +47,20 @@ module WB_stage(
     wire [31:0] ws_pc;
     wire        ws_rf_we;
     wire [`CSR_BUS_WD-1:0] ws_csr_bus;
+    wire [`EX_BUS_WD-1:0] ws_ex_bus;
     wire ws_syscall, ws_ertn, ws_csr_read, ws_csr_write;
     wire [13:0] ws_csr_num;
     wire [31:0] ws_csr_wmask, ws_csr_wvalue;
     wire [31:0] csr_rvalue, ex_entry, ex_return;
-    wire wb_ex = ws_valid && ws_syscall && !reset;
-    wire ertn_flush = ws_valid && ws_ertn && !reset;
+    wire wb_ex = ws_valid && ((|ws_ex_bus[36:32]) || ws_syscall) && !reset;
+    wire ertn_flush = ws_valid && ws_ertn && !wb_ex && !reset;
+    // Interrupts have priority over synchronous exceptions on the same instruction.
+    wire [5:0] wb_ecode = ws_ex_bus[35] ? `ECODE_INT :
+                         ws_ex_bus[36] ? `ECODE_ADEF :
+                         ws_ex_bus[33] ? `ECODE_INE :
+                         ws_syscall ? `ECODE_SYS :
+                         ws_ex_bus[34] ? `ECODE_BRK : `ECODE_ALE;
+    assign ws_csr_pending = ws_valid && (ws_csr_write || ws_ertn);
     wire [31:0] ws_final_result = ws_csr_read ? csr_rvalue : ws_result;
 
     assign {ws_syscall, ws_ertn, ws_csr_read, ws_csr_write,
@@ -63,10 +74,13 @@ module WB_stage(
         .csr_we(ws_valid && ws_csr_write && !flush && !reset),
         .csr_wmask(ws_csr_wmask), .csr_wvalue(ws_csr_wvalue),
         .wb_ex(wb_ex), .wb_pc(ws_pc), .ertn_flush(ertn_flush),
+        .wb_ecode(wb_ecode), .wb_badv(ws_ex_bus[31:0]),
+        .hw_int_in(hw_int_in), .has_int(has_int),
         .ex_entry(ex_entry), .ex_return(ex_return)
     );
 
     assign {
+        ws_ex_bus,
         ws_csr_bus,
         ws_gr_we,
         ws_dest,

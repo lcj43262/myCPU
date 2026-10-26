@@ -19,7 +19,8 @@ module mycpu_top(
     output wire [31:0] debug_wb_pc,
     output wire [ 3:0] debug_wb_rf_we,
     output wire [ 4:0] debug_wb_rf_wnum,
-    output wire [31:0] debug_wb_rf_wdata
+    output wire [31:0] debug_wb_rf_wdata,
+    input  wire [ 7:0] hw_int_in
 );
 
     reg reset;
@@ -27,6 +28,8 @@ module mycpu_top(
     wire flush;
     wire [31:0] flush_target;
     wire ms_cancel;
+    wire has_int;
+    wire es_csr_pending, ms_csr_pending, ws_csr_pending;
 
     // IF stage
     wire [`BR_BUS_WD-1:0] br_bus;
@@ -63,6 +66,8 @@ module mycpu_top(
         .clk(clk),
         .reset(reset),
         .flush(flush),
+        .has_int(has_int),
+        .csr_pending(es_csr_pending || ms_csr_pending || ws_csr_pending),
         .es_allowin(es_allowin),
         .fs_to_ds_valid (fs_to_ds_valid),
         .fs_to_ds_bus(fs_to_ds_bus),
@@ -86,6 +91,7 @@ module mycpu_top(
         .reset(reset),
         .flush(flush),
         .ms_cancel(ms_cancel),
+        .es_csr_pending(es_csr_pending),
         .ms_allowin(ms_allowin),
         .ds_to_es_valid(ds_to_es_valid),
         .ds_to_es_bus(ds_to_es_bus),
@@ -110,6 +116,7 @@ module mycpu_top(
         .reset(reset),
         .flush(flush),
         .ms_cancel(ms_cancel),
+        .ms_csr_pending(ms_csr_pending),
         .ws_allowin(ws_allowin),
         .es_to_ms_valid(es_to_ms_valid),
         .es_to_ms_bus  (es_to_ms_bus),
@@ -123,6 +130,9 @@ module mycpu_top(
     WB_stage u_wb_stage(
         .clk(clk),
         .reset(reset),
+        .hw_int_in(hw_int_in),
+        .has_int(has_int),
+        .ws_csr_pending(ws_csr_pending),
         .flush(flush),
         .flush_target(flush_target),
         .ws_allowin(ws_allowin),

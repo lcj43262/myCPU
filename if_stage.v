@@ -60,10 +60,12 @@ module IF_stage(
     end
 
     //if向id传 递 的bus
-    assign fs_inst = inst_sram_rdata;
-    assign fs_to_ds_bus = {fs_inst,fs_pc};
+    wire fs_adef = |fs_pc[1:0];
+    assign fs_inst = fs_adef ? 32'b0 : inst_sram_rdata;
+    assign fs_to_ds_bus = {fs_adef,fs_inst,fs_pc};
 
-    assign inst_sram_en = to_fs_valid && fs_allowin && !flush; //
+    // Carry a faulting PC through the pipeline without issuing a bad fetch.
+    assign inst_sram_en = to_fs_valid && fs_allowin && !flush && (next_pc[1:0] == 2'b00);
     assign inst_sram_we = 4'h0; //写
     assign inst_sram_addr =next_pc;
     assign inst_sram_wdata = 32'b0;

@@ -5,6 +5,7 @@ module EXE_stage(
     input wire reset,
     input wire flush,
     input wire ms_cancel,
+    output wire es_csr_pending,
     // allowin
     input wire ms_allowin,
     output wire es_allowin,
@@ -29,7 +30,6 @@ module EXE_stage(
     wire div_done;
     reg  [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus_r;
 
-    assign es_ready_go    = !is_div || div_done;
     assign es_allowin     = !es_valid || es_ready_go && ms_allowin;
     assign es_to_ms_valid = es_valid && es_ready_go && !flush;
 
@@ -66,9 +66,18 @@ module EXE_stage(
     wire [31:0] es_pc;
     wire        es_res_from_mem;
     wire [`CSR_BUS_WD-1:0] es_csr_bus;
+    wire [`EX_BUS_WD-1:0] es_ex_bus;
+    wire es_ale = ((es_load_op && es_ld_type == 3'b000) || es_mem_we == 2'b01)
+                  ? (|alu_result[1:0])
+                  : ((es_load_op && (es_ld_type == 3'b011 || es_ld_type == 3'b100)) ||
+                     es_mem_we == 2'b11) && alu_result[0];
+    wire es_exception = (|es_ex_bus[36:32]) || es_csr_bus[81] || es_ale;
+    assign es_csr_pending = es_valid && (es_csr_bus[78] || es_csr_bus[80]);
     wire es_csr_read = es_csr_bus[79];
+    assign es_ready_go = es_exception || !is_div || div_done;
 
     assign {
+        es_ex_bus,
         es_csr_bus,
         es_muldiv_op,
         es_alu_op,
@@ -113,7 +122,7 @@ module EXE_stage(
     divider u_divider(
         .clk(clk),
         .reset(reset || flush),
-        .start(es_valid && is_div && !div_busy && !div_done),
+        .start(es_valid && is_div && !es_exception && !div_busy && !div_done),
         .consume(es_valid && is_div && es_ready_go && ms_allowin),
         .signed_mode(es_muldiv_op[3] || es_muldiv_op[5]),
         .dividend(es_rj_value),
@@ -125,7 +134,7 @@ module EXE_stage(
     );
 
     // A redirect already in MEM must stop younger accesses before its WB edge.
-    wire mem_access_valid = es_valid && !reset && !flush && !ms_cancel;
+    wire mem_access_valid = es_valid && !reset && !flush && !ms_cancel && !es_exception;
     assign data_sram_en    = (es_load_op || (es_mem_we != 2'b00)) && mem_access_valid;
     assign data_sram_we    = mem_access_valid ?
                              (es_mem_we == 2'b01 ? 4'b1111 :
@@ -140,6 +149,8 @@ module EXE_stage(
 
     // 1+3+1+5+32+32 = 74
     assign es_to_ms_bus = {
+        es_ex_bus[36:33], es_ex_bus[32] || es_ale,
+        es_ale ? alu_result : es_ex_bus[31:0],
         es_csr_bus,
         es_res_from_mem,
         es_ld_type,
@@ -150,7 +161,7 @@ module EXE_stage(
     };
 
     assign es_to_ds_bus = {
-        es_valid && es_gr_we,
+        es_valid && es_gr_we && !es_exception,
         es_load_op || es_csr_read || !es_ready_go,
         es_dest,
         es_result
