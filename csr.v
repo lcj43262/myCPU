@@ -43,7 +43,7 @@ module csr(
 
     // This lab has no IPI input. IS[10] is reserved and always reads zero.
     wire [12:0] estat_is = {1'b0, estat_timer, 1'b0, estat_hw, estat_sw};
-    // DA=1, PG=0, DATF=DATM=0 until address translation is implemented.
+    //28'b0,DA=1,IE,PLV
     wire [31:0] crmd_value = {28'b0, 1'b1, crmd_ie, crmd_plv};
     wire [31:0] prmd_value = {29'b0, prmd_pie, prmd_pplv};
     wire [31:0] ecfg_value = {19'b0, ecfg_lie};

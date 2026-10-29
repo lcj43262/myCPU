@@ -21,11 +21,13 @@ module ID_stage(
     output wire [`DS_TO_ES_BUS_WD -1 : 0 ] ds_to_es_bus,
     //to if stage
     output wire [`BR_BUS_WD -1 : 0 ] br_bus ,
+    output wire [`BP_UPDATE_BUS_WD-1:0] bp_update_bus,
     output wire ds_allowin
 );
 
     wire br_taken;
     wire [31:0] br_target;
+    wire [31:0] ds_predicted_next_pc;
 
     wire [31:0] ds_pc;
     wire [31:0] ds_inst;
@@ -53,7 +55,7 @@ module ID_stage(
     end
 
     wire ds_adef;
-    assign {ds_adef, ds_inst, ds_pc} = fs_to_ds_bus_r;
+    assign {ds_predicted_next_pc, ds_adef, ds_inst, ds_pc} = fs_to_ds_bus_r;
 
     wire inst_csrrd = (ds_inst[31:24] == 8'h04) && (ds_inst[9:5] == 5'd0);
     wire inst_csrwr = (ds_inst[31:24] == 8'h04) && (ds_inst[9:5] == 5'd1);
@@ -450,13 +452,21 @@ module ID_stage(
                     || inst_jirl
                     || inst_bl
                     || inst_b
-                    ) && ds_valid && ds_ready_go && es_allowin && !flush && !ds_exception;
+                    );
     assign br_target = (inst_beq || inst_bne || inst_blt || inst_bge ||
                         inst_bltu || inst_bgeu || inst_bl || inst_b) ? (ds_pc + br_offs)
                                                                     : (rj_value + jirl_offs);
 
-    assign br_bus = {br_taken , br_target};
-    
+    wire br_is_conditional = inst_beq || inst_bne || inst_blt || inst_bge ||
+                             inst_bltu || inst_bgeu;
+    wire br_is_branch = br_is_conditional || inst_b || inst_bl || inst_jirl;
+    wire br_resolve = ds_valid && ds_ready_go && es_allowin && !flush && !ds_exception;
+    wire [31:0] br_actual_next_pc = br_taken ? br_target : ds_pc + 32'd4;
+    wire br_mispredict = br_resolve && (ds_predicted_next_pc != br_actual_next_pc);
+    assign br_bus = {br_mispredict, br_actual_next_pc};
+    assign bp_update_bus = {br_resolve, br_is_branch, br_is_conditional,
+                            br_taken, ds_pc, br_target};
+
     assign csr_bus = {
         inst_syscall, inst_ertn, inst_csr, inst_csrwr || inst_csrxchg,
         ds_inst[23:10], inst_csrxchg ? rj_value : 32'hffffffff, rkd_value

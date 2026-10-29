@@ -2,7 +2,8 @@
 `define MYCPU_HEAD_V
 
 `define BR_BUS_WD       33
-`define FS_TO_DS_BUS_WD 65
+`define BP_UPDATE_BUS_WD 68
+`define FS_TO_DS_BUS_WD 97
 `define CSR_BUS_WD      82
 // Counter reads are completed in WB, independently of the CSR control bus.
 `define CNT_OP_WD       2

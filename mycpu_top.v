@@ -1,6 +1,8 @@
 `include "mycpu_head.v"
 
-module mycpu_top(
+module mycpu_top #(
+    parameter BP_ENABLE = 1
+)(
     input  wire        clk,
     input  wire        resetn,
     // inst sram interface
@@ -33,17 +35,19 @@ module mycpu_top(
 
     // IF stage
     wire [`BR_BUS_WD-1:0] br_bus;
+    wire [`BP_UPDATE_BUS_WD-1:0] bp_update_bus;
     wire fs_to_ds_valid;
     wire [`FS_TO_DS_BUS_WD-1:0] fs_to_ds_bus;
     wire ds_allowin;
 
-    IF_stage u_if_stage(
+    IF_stage #(.BP_ENABLE(BP_ENABLE)) u_if_stage(
         .clk(clk),
         .reset(reset),
         .flush(flush),
         .flush_target(flush_target),
         .ds_allowin(ds_allowin),
         .br_bus(br_bus),
+        .bp_update_bus(bp_update_bus),
         .inst_sram_rdata (inst_sram_rdata ),
 
         .fs_to_ds_valid(fs_to_ds_valid),
@@ -78,6 +82,7 @@ module mycpu_top(
         .ds_to_es_valid (ds_to_es_valid),
         .ds_to_es_bus(ds_to_es_bus),
         .br_bus(br_bus),
+        .bp_update_bus(bp_update_bus),
         .ds_allowin(ds_allowin)
     );
 
