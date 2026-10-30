@@ -33,6 +33,34 @@ module mycpu_top #(
     wire has_int;
     wire es_csr_pending, ms_csr_pending, ws_csr_pending;
 
+    wire inst_req_valid, inst_req_ready, inst_resp_valid, inst_resp_ready;
+    wire [31:0] inst_req_addr, inst_resp_rdata;
+    wire data_req_valid, data_req_ready, data_resp_valid, data_resp_ready;
+    wire [31:0] data_req_addr, data_req_wdata, data_resp_rdata;
+    wire [3:0] data_req_wstrb;
+
+    cache_sram #(.ADDR_BITS(20), .READ_ONLY(1)) u_icache(
+        .clk(clk), .reset(reset),
+        .req_valid(inst_req_valid), .req_ready(inst_req_ready),
+        .req_addr(inst_req_addr), .req_wstrb(4'b0), .req_wdata(32'b0),
+        .resp_valid(inst_resp_valid), .resp_ready(inst_resp_ready),
+        .resp_rdata(inst_resp_rdata),
+        .ram_en(inst_sram_en), .ram_we(inst_sram_we),
+        .ram_addr(inst_sram_addr), .ram_wdata(inst_sram_wdata),
+        .ram_rdata(inst_sram_rdata)
+    );
+    cache_sram #(.ADDR_BITS(18), .READ_ONLY(0)) u_dcache(
+        .clk(clk), .reset(reset),
+        .req_valid(data_req_valid), .req_ready(data_req_ready),
+        .req_addr(data_req_addr), .req_wstrb(data_req_wstrb),
+        .req_wdata(data_req_wdata),
+        .resp_valid(data_resp_valid), .resp_ready(data_resp_ready),
+        .resp_rdata(data_resp_rdata),
+        .ram_en(data_sram_en), .ram_we(data_sram_we),
+        .ram_addr(data_sram_addr), .ram_wdata(data_sram_wdata),
+        .ram_rdata(data_sram_rdata)
+    );
+
     // IF stage
     wire [`BR_BUS_WD-1:0] br_bus;
     wire [`BP_UPDATE_BUS_WD-1:0] bp_update_bus;
@@ -48,14 +76,12 @@ module mycpu_top #(
         .ds_allowin(ds_allowin),
         .br_bus(br_bus),
         .bp_update_bus(bp_update_bus),
-        .inst_sram_rdata (inst_sram_rdata ),
+        .inst_req_valid(inst_req_valid), .inst_req_ready(inst_req_ready),
+        .inst_req_addr(inst_req_addr), .inst_resp_valid(inst_resp_valid),
+        .inst_resp_ready(inst_resp_ready), .inst_resp_rdata(inst_resp_rdata),
 
         .fs_to_ds_valid(fs_to_ds_valid),
-        .fs_to_ds_bus(fs_to_ds_bus),
-        .inst_sram_en(inst_sram_en),
-        .inst_sram_we(inst_sram_we),
-        .inst_sram_addr(inst_sram_addr),
-        .inst_sram_wdata(inst_sram_wdata)
+        .fs_to_ds_bus(fs_to_ds_bus)
     );
 
     // ID stage
@@ -105,10 +131,14 @@ module mycpu_top #(
         .es_to_ms_valid(es_to_ms_valid),
         .es_to_ms_bus(es_to_ms_bus),
         .es_to_ds_bus(es_to_ds_bus),
-        .data_sram_en(data_sram_en),
-        .data_sram_we(data_sram_we),
-        .data_sram_addr(data_sram_addr),
-        .data_sram_wdata (data_sram_wdata )
+        .data_req_ready(data_req_ready),
+        .data_resp_valid(data_resp_valid),
+        .data_resp_ready(data_resp_ready),
+        .data_resp_rdata(data_resp_rdata),
+        .data_sram_en(data_req_valid),
+        .data_sram_we(data_req_wstrb),
+        .data_sram_addr(data_req_addr),
+        .data_sram_wdata(data_req_wdata)
     );
 
     // MEM stage
@@ -125,7 +155,6 @@ module mycpu_top #(
         .ws_allowin(ws_allowin),
         .es_to_ms_valid(es_to_ms_valid),
         .es_to_ms_bus  (es_to_ms_bus),
-        .data_sram_rdata(data_sram_rdata),
         .ms_allowin(ms_allowin),
         .ms_to_ws_valid(ms_to_ws_valid),
         .ms_to_ws_bus(ms_to_ws_bus),

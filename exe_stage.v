@@ -18,6 +18,10 @@ module EXE_stage(
     // to ID stage
     output wire [`ES_TO_DS_BUS_WD-1:0] es_to_ds_bus,
     // data SRAM interface
+    input wire data_req_ready,
+    input wire data_resp_valid,
+    output wire data_resp_ready,
+    input wire [31:0] data_resp_rdata,
     output wire data_sram_en,
     output wire [ 3:0] data_sram_we,
     output wire [31:0] data_sram_addr,
@@ -68,6 +72,7 @@ module EXE_stage(
     wire [`CSR_BUS_WD-1:0] es_csr_bus;
     wire [`EX_BUS_WD-1:0] es_ex_bus;
     wire [`CNT_OP_WD-1:0] es_cnt_op;
+    wire [31:0] alu_result;
     wire es_ale = ((es_load_op && es_ld_type == 3'b000) || es_mem_we == 2'b01)
                   ? (|alu_result[1:0])
                   : ((es_load_op && (es_ld_type == 3'b011 || es_ld_type == 3'b100)) ||
@@ -75,7 +80,26 @@ module EXE_stage(
     wire es_exception = (|es_ex_bus[36:32]) || es_csr_bus[81] || es_ale;
     assign es_csr_pending = es_valid && (es_csr_bus[78] || es_csr_bus[80]);
     wire es_csr_read = es_csr_bus[79];
-    assign es_ready_go = es_exception || !is_div || div_done;
+    wire es_mem_op = es_load_op || (es_mem_we != 2'b00);
+    reg es_mem_sent, es_mem_done;
+    reg [31:0] es_mem_data;
+    assign es_ready_go = es_exception ||
+                         ((!is_div || div_done) && (!es_mem_op || es_mem_done));
+    assign data_resp_ready = 1'b1;
+    always @(posedge clk) begin
+        if (reset || flush || (es_allowin && ds_to_es_valid)) begin
+            es_mem_sent <= 1'b0;
+            es_mem_done <= 1'b0;
+            es_mem_data <= 32'b0;
+        end else begin
+            if (data_sram_en && data_req_ready)
+                es_mem_sent <= 1'b1;
+            if (data_resp_valid && es_valid && es_mem_sent) begin
+                es_mem_done <= 1'b1;
+                es_mem_data <= data_resp_rdata;
+            end
+        end
+    end
 
     assign {
         es_cnt_op,
@@ -100,7 +124,6 @@ module EXE_stage(
 
     wire [31:0] alu_src1;
     wire [31:0] alu_src2;
-    wire [31:0] alu_result;
 
     assign alu_src1 = es_src1_is_pc  ? es_pc : es_rj_value;
     assign alu_src2 = es_src2_is_4   ? 32'd4 :
@@ -137,7 +160,7 @@ module EXE_stage(
 
     // A redirect already in MEM must stop younger accesses before its WB edge.
     wire mem_access_valid = es_valid && !reset && !flush && !ms_cancel && !es_exception;
-    assign data_sram_en    = (es_load_op || (es_mem_we != 2'b00)) && mem_access_valid;
+    assign data_sram_en    = es_mem_op && mem_access_valid && !es_mem_sent;
     assign data_sram_we    = mem_access_valid ?
                              (es_mem_we == 2'b01 ? 4'b1111 :
                               es_mem_we == 2'b10 ? (4'b0001 << alu_result[1:0]) :
@@ -151,6 +174,7 @@ module EXE_stage(
 
     // 1+3+1+5+32+32 = 74
     assign es_to_ms_bus = {
+        es_mem_data,
         es_cnt_op,
         es_ex_bus[36:33], es_ex_bus[32] || es_ale,
         es_ale ? alu_result : es_ex_bus[31:0],

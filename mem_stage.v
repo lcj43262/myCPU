@@ -13,7 +13,6 @@ module MEM_stage(
     input  wire es_to_ms_valid,
     input  wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus,
 
-    input  wire [31:0] data_sram_rdata,
 
     output wire ms_to_ws_valid,
     output wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus,
@@ -46,6 +45,7 @@ module MEM_stage(
     wire [ 4:0] ms_dest;
     wire [31:0] ms_alu_result;
     wire [31:0] ms_pc;
+    wire [31:0] data_sram_rdata;
     wire [`CSR_BUS_WD-1:0] ms_csr_bus;
     wire [`EX_BUS_WD-1:0] ms_ex_bus;
     wire [`CNT_OP_WD-1:0] ms_cnt_op;
@@ -54,6 +54,7 @@ module MEM_stage(
     assign ms_csr_pending = ms_valid && (ms_csr_bus[78] || ms_csr_bus[80]);
 
     assign {
+        data_sram_rdata,
         ms_cnt_op,
         ms_ex_bus,
         ms_csr_bus,

@@ -14,7 +14,7 @@
 // {ADEF, INT, BRK, INE, ALE, badv[31:0]}
 `define EX_BUS_WD       37
 `define DS_TO_ES_BUS_WD (163 + `CSR_BUS_WD + `EX_BUS_WD + `CNT_OP_WD)
-`define ES_TO_MS_BUS_WD (74 + `CSR_BUS_WD + `EX_BUS_WD + `CNT_OP_WD)
+`define ES_TO_MS_BUS_WD (106 + `CSR_BUS_WD + `EX_BUS_WD + `CNT_OP_WD)
 `define ES_TO_DS_BUS_WD 39
 `define MS_TO_DS_BUS_WD 39
 `define WS_TO_RF_BUS_WD 38

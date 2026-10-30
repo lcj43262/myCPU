@@ -8,52 +8,35 @@ module IF_stage #(
     input wire flush,
     input wire [31:0] flush_target,
     input wire ds_allowin,
-    input wire [`BR_BUS_WD -1 :0] br_bus,
+    input wire [`BR_BUS_WD-1:0] br_bus,
     input wire [`BP_UPDATE_BUS_WD-1:0] bp_update_bus,
-    input wire [31:0] inst_sram_rdata,
-
+    output wire inst_req_valid,
+    input wire inst_req_ready,
+    output wire [31:0] inst_req_addr,
+    input wire inst_resp_valid,
+    output wire inst_resp_ready,
+    input wire [31:0] inst_resp_rdata,
     output wire fs_to_ds_valid,
-    output wire [`FS_TO_DS_BUS_WD-1 :0] fs_to_ds_bus,
-    // inst sram interface
-    output wire inst_sram_en,
-    output wire [3:0] inst_sram_we,
-    output wire [31:0] inst_sram_addr,
-    output wire [31:0] inst_sram_wdata
-    );
-    //if级 握 手 信 号
+    output wire [`FS_TO_DS_BUS_WD-1:0] fs_to_ds_bus
+);
     reg fs_valid;
-    reg [31:0] fs_pc;
-    wire fs_ready_go;
-    wire fs_allowin;
-    wire to_fs_valid;
-    wire br_redirect; // ID detected a wrong predicted successor.
-    wire [31:0] br_target;//跳 转 地 址
-    
-    assign fs_ready_go = 1'b1; //可 以 传 输
-    assign fs_allowin = !fs_valid || fs_ready_go && ds_allowin; //允 许 进 入
-    assign fs_to_ds_valid = fs_valid && fs_ready_go && !br_redirect && !flush;
-
-    always@(posedge clk)begin
-        if(reset || flush)begin
-            fs_valid <= 1'b0;
-        end else if(fs_allowin)begin
-            fs_valid <= to_fs_valid;
-        end
-    end
-
-    wire [31:0] seq_pc; //顺 序 的 地 址
-    wire [31:0] next_pc; //下 一 个 执 行 的 地 址， 可 能 会 跳 转
-    assign {br_redirect,br_target} = br_bus;
+    reg [31:0] fs_pc, fs_inst, fs_prediction;
+    reg [31:0] fetch_pc, pending_pc, pending_prediction;
+    reg pending, discard;
+    wire br_redirect;
+    wire [31:0] br_target;
+    assign {br_redirect, br_target} = br_bus;
+    wire redirect = flush || br_redirect;
+    wire [31:0] redirect_target = flush ? flush_target : br_target;
     wire predict_taken;
     wire [31:0] predict_target;
-    wire [31:0] predicted_next_pc;
     wire bp_update_valid, bp_is_branch, bp_is_conditional, bp_actual_taken;
     wire [31:0] bp_update_pc, bp_update_target;
     assign {bp_update_valid, bp_is_branch, bp_is_conditional, bp_actual_taken,
             bp_update_pc, bp_update_target} = bp_update_bus;
     generate if (BP_ENABLE) begin : gen_bp
         branch_predictor u_predictor(
-            .clk(clk), .reset(reset), .lookup_pc(fs_pc),
+            .clk(clk), .reset(reset), .lookup_pc(fetch_pc),
             .predict_taken(predict_taken), .predict_target(predict_target),
             .update_valid(bp_update_valid && !flush),
             .update_is_branch(bp_is_branch),
@@ -65,34 +48,58 @@ module IF_stage #(
         assign predict_taken = 1'b0;
         assign predict_target = 32'b0;
     end endgenerate
-    //pre-if stage
-    assign to_fs_valid = ~reset;
-    assign seq_pc = fs_pc + 3'h4; //顺 序
-    assign predicted_next_pc = (fs_valid && predict_taken) ? predict_target : seq_pc;
-    assign next_pc = br_redirect ? br_target : predicted_next_pc;
+    wire [31:0] prediction = predict_taken ? predict_target : fetch_pc + 32'd4;
+    assign inst_req_valid = !reset && !redirect && !pending && !fs_valid &&
+                            fetch_pc[1:0] == 2'b00;
+    assign inst_req_addr = fetch_pc;
+    assign inst_resp_ready = 1'b1;
+    assign fs_to_ds_valid = fs_valid && !redirect && !reset;
+    assign fs_to_ds_bus = {fs_prediction, |fs_pc[1:0], fs_inst, fs_pc};
 
-    wire [31:0] fs_inst; //fs阶 段 的inst和pc,往 后 传 递
-    always@(posedge clk)begin
-        if(reset)begin
-            fs_pc <= 32'h1bfffffc;
-        end
-        else if(flush)begin
-            fs_pc <= flush_target - 32'd4;
-        end
-        else if(to_fs_valid && fs_allowin)begin
-        fs_pc <= next_pc;
+    always @(posedge clk) begin
+        if (reset) begin
+            fs_valid <= 1'b0;
+            fs_pc <= 32'b0;
+            fs_inst <= 32'b0;
+            fs_prediction <= 32'b0;
+            fetch_pc <= 32'h1c000000;
+            pending_pc <= 32'b0;
+            pending_prediction <= 32'b0;
+            pending <= 1'b0;
+            discard <= 1'b0;
+        end else begin
+            if (fs_to_ds_valid && ds_allowin)
+                fs_valid <= 1'b0;
+            if (inst_req_valid && inst_req_ready) begin
+                pending <= 1'b1;
+                discard <= 1'b0;
+                pending_pc <= fetch_pc;
+                pending_prediction <= prediction;
+                fetch_pc <= prediction;
+            end
+            if (inst_resp_valid && pending) begin
+                pending <= 1'b0;
+                discard <= 1'b0;
+                if (!discard && !redirect) begin
+                    fs_valid <= 1'b1;
+                    fs_pc <= pending_pc;
+                    fs_inst <= inst_resp_rdata;
+                    fs_prediction <= pending_prediction;
+                end
+            end
+            if (!pending && !fs_valid && !redirect && |fetch_pc[1:0]) begin
+                fs_valid <= 1'b1;
+                fs_pc <= fetch_pc;
+                fs_inst <= 32'b0;
+                fs_prediction <= fetch_pc + 32'd4;
+                fetch_pc <= fetch_pc + 32'd4;
+            end
+            if (redirect) begin
+                fs_valid <= 1'b0;
+                fetch_pc <= redirect_target;
+                if (pending && !inst_resp_valid)
+                    discard <= 1'b1;
+            end
         end
     end
-
-    //if向id传 递 的bus
-    wire fs_adef = |fs_pc[1:0];
-    assign fs_inst = fs_adef ? 32'b0 : inst_sram_rdata;
-    assign fs_to_ds_bus = {predicted_next_pc,fs_adef,fs_inst,fs_pc};
-
-    // Carry a faulting PC through the pipeline without issuing a bad fetch.
-    assign inst_sram_en = to_fs_valid && fs_allowin && !flush && (next_pc[1:0] == 2'b00);
-    assign inst_sram_we = 4'h0; //写
-    assign inst_sram_addr =next_pc;
-    assign inst_sram_wdata = 32'b0;
-
 endmodule
